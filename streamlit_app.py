@@ -4,6 +4,34 @@ import altair as alt
 
 st.title("Interactive Gantt Chart Timeline from CSV (Altair)")
 
+st.markdown(
+    """
+Upload a CSV file with these columns:  
+`Serial, Number, Time, From, Faction, To, Team, Method, On, Subject, Message, Reply, timestamp, Expected Action, Expected Action Title, Expected Action ImageURL, ImageURL`.
+
+**Timeline Construction:**
+
+- **Overall Timeline (Serial-level):**  
+  Each unique **Serial** is represented by one bar.  
+  • The start time is the first inject’s **Time** for that serial.  
+  • The end time is the first **Time** of the next serial (or the last time for the final serial).  
+  • The bar is labeled (on the bar, aligned left in black) with the **Serial**.  
+  • The serial bars are sorted in chronological order (by start time).
+
+- **Detailed Timeline (Inject-level):**  
+  When you select a serial, its timeline “unfurls” to show each individual inject (row) as a separate bar.  
+  • For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the final inject).  
+  • The overlaid text on each bar (aligned left in black with a slight offset) is determined as follows:  
+  – If **Subject** is nonempty and not `"null"`, then use **Subject**.  
+  – Otherwise, use the first **30** characters of **Message** (with `"..."` appended if **Message** is longer than 30 characters).  
+  • The tooltip displays the first **120** characters of **Message**.  
+  • If **ImageURL** is provided (nonempty), an image (50×50 pixels) appears on hover to the right of the bar.  
+  • A toggle switch lets you choose whether to label the y‑axis by the **From** field (“Persona”) or the **Method** field (“Channel”). A sequential number is appended so that each y‑axis label is unique.
+
+Use the dropdown below to switch between the overall view and a detailed view.
+"""
+)
+
 # File uploader widget.
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
@@ -47,7 +75,12 @@ if uploaded_file is not None:
                 "Start": start_time,
                 "End": end_time
             })
+
+        # Build a DataFrame and sort it by Start time.
         serial_timeline_df = pd.DataFrame(serial_timeline)
+        serial_timeline_df = serial_timeline_df.sort_values("Start")
+        # Create a sorted list of serial labels based on their start time.
+        sorted_serials = serial_timeline_df["Serial"].tolist()
 
         ##############################
         # Select Overall or Detailed View
@@ -64,7 +97,7 @@ if uploaded_file is not None:
             overall_chart = alt.Chart(serial_timeline_df).mark_bar().encode(
                 x=alt.X("Start:T", title="Time"),
                 x2="End:T",
-                y=alt.Y("Serial:N", title="Serial"),
+                y=alt.Y("Serial:N", title="Serial", sort=sorted_serials),
                 tooltip=["Serial", "Start", "End"]
             ).properties(width=700, height=300)
             
@@ -76,7 +109,7 @@ if uploaded_file is not None:
                 dx=3  # slight offset from the start of the bar
             ).encode(
                 x=alt.X("Start:T"),
-                y=alt.Y("Serial:N"),
+                y=alt.Y("Serial:N", sort=sorted_serials),
                 text=alt.Text("Serial:N")
             )
             
@@ -148,8 +181,6 @@ if uploaded_file is not None:
             inject_timeline_df = pd.DataFrame(inject_timeline)
             # Ensure the DataFrame is sorted by injection order (time order).
             inject_timeline_df = inject_timeline_df.sort_values("InjectOrder")
-
-            # Create a sorted list of unique AxisLabel values based on the injection order.
             sorted_labels = inject_timeline_df.sort_values("InjectOrder")["AxisLabel"].tolist()
 
             ##############################
@@ -185,7 +216,6 @@ if uploaded_file is not None:
 
             # Create an image layer that appears on hover if ImageURL is not empty.
             image_layer = alt.Chart(inject_timeline_df).mark_image(width=50, height=50).encode(
-                # Position the image to the right of the bar (using the End time).
                 x=alt.X("End:T", title="Time"),
                 y=alt.Y("AxisLabel:N", sort=sorted_labels, title=label_option),
                 url=alt.Url("ImageURL:N"),

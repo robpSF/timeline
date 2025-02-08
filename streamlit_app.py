@@ -67,11 +67,6 @@ if uploaded_file is not None:
             })
         serial_timeline_df = pd.DataFrame(serial_timeline)
 
-        # Precompute midpoint for each overall timeline bar.
-        serial_timeline_df["midpoint"] = serial_timeline_df.apply(
-            lambda row: row["Start"] + (row["End"] - row["Start"]) / 2, axis=1
-        )
-
         # Let the user choose between the overall timeline and a detailed view.
         options = ["Overall Timeline"] + list(serials)
         selected_serial = st.selectbox(
@@ -89,13 +84,14 @@ if uploaded_file is not None:
                 tooltip=["Serial", "Start", "End"]
             ).properties(width=700, height=300)
             
-            # Overlay the Serial text on each bar using the precomputed midpoint.
+            # Overlay the Serial text at the start of each bar with a slight offset, in black.
             text = alt.Chart(serial_timeline_df).mark_text(
-                align="center",
+                align="left",
                 baseline="middle",
-                color="white"
+                color="black",
+                dx=3  # slight right offset
             ).encode(
-                x=alt.X("midpoint:T"),
+                x=alt.X("Start:T"),
                 y=alt.Y("Serial:N"),
                 text=alt.Text("Serial:N")
             )

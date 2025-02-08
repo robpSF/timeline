@@ -25,7 +25,7 @@ Upload a CSV file with these columns:
   – Otherwise, use the first **30** characters of **Message** (with `"..."` appended if **Message** is longer than 30 characters).  
   • The tooltip displays the first **120** characters of **Message**.  
   • If **ImageURL** is provided (nonempty), an image (50×50 pixels) appears on hover to the right of the bar.  
-  • **New:** Instead of showing generic “Inject 1”, “Inject 2”, etc. on the y‑axis, a toggle switch lets you choose whether to show either the **From** field (“Persona”) or the **Method** field (“Channel”).
+  • **New:** Instead of showing generic “Inject 1”, “Inject 2”, etc. on the y‑axis, a toggle switch lets you choose whether to show either the **From** field (“Persona”) or the **Method** field (“Channel”). To ensure each row is distinct, a sequential number is appended to the chosen value.
 
 Use the dropdown below to switch between the overall view and a detailed view.
 """
@@ -155,9 +155,11 @@ if uploaded_file is not None:
 
                 # Determine the axis label based on the toggle switch.
                 if label_option == "Persona":
-                    axis_label = group["From"].iloc[i]
+                    axis_base = group["From"].iloc[i]
                 else:
-                    axis_label = group["Method"].iloc[i]
+                    axis_base = group["Method"].iloc[i]
+                # Append a sequential number to make it unique.
+                axis_label = f"{axis_base} ({i+1})"
 
                 inject_timeline.append({
                     "AxisLabel": axis_label,

@@ -13,12 +13,16 @@ Upload a CSV file with these columns:
 - **Overall Timeline:**  
   Each unique **Serial** is represented by one bar.  
   The start time is the first inject’s **Time** for that serial.  
-  The end time is the first **Time** of the next serial (or the last time for the final serial).
+  The end time is the first **Time** of the next serial (or the last time for the final serial).  
+  The bar is labeled (on the bar, aligned left in black) with the **Serial**.
 
 - **Detailed (Inject-level) Timeline:**  
   When you select a serial, its timeline “unfurls” to show each individual inject (row) as a separate bar.  
   For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the final inject).  
-  The overlaid text on each bar shows the **Subject**; however, if the **Subject** is missing, empty, or `"null"`, the first 12 characters of **Message** (followed by `"..."` if longer than 12 characters) are used instead.
+  The overlaid text on each bar (aligned left in black with a slight offset) is determined as follows:  
+  • If **Subject** is nonempty and not `"null"`, then use Subject.  
+  • Otherwise, use the first **30** characters of **Message** (appending `"..."` if Message is longer than 30 characters).  
+  In the tooltip (on hover) the first **120** characters of **Message** are shown, and if **ImageURL** is not empty an image (50×50 pixels) is displayed to the right of the bar.
 
 Use the dropdown below to switch between the overall view and a detailed view.
 """
@@ -29,11 +33,11 @@ uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file is not None:
     try:
-        # Read CSV data
+        # Read CSV data.
         df = pd.read_csv(uploaded_file)
 
         # Verify required columns exist.
-        required_columns = ["Serial", "Time", "Subject", "Message"]
+        required_columns = ["Serial", "Time", "Subject", "Message", "ImageURL"]
         for col in required_columns:
             if col not in df.columns:
                 st.error(f"Missing required column: {col}")
@@ -46,7 +50,9 @@ if uploaded_file is not None:
             st.stop()
         df = df.sort_values("Time").reset_index(drop=True)
 
-        # Build overall (serial-level) timeline data.
+        ##############################
+        # Overall (Serial-level) Timeline
+        ##############################
         serials = df["Serial"].unique()
         serial_timeline = []
         for i, serial in enumerate(serials):
@@ -67,7 +73,9 @@ if uploaded_file is not None:
             })
         serial_timeline_df = pd.DataFrame(serial_timeline)
 
-        # Let the user choose between the overall timeline and a detailed view.
+        ##############################
+        # Select overall or detailed view.
+        ##############################
         options = ["Overall Timeline"] + list(serials)
         selected_serial = st.selectbox(
             "Select a Serial to view its detailed (inject-level) timeline:",
@@ -76,34 +84,33 @@ if uploaded_file is not None:
 
         if selected_serial == "Overall Timeline":
             st.subheader("Overall Timeline (Serial-level)")
-            # In the overall view, display one bar per serial.
-            chart = alt.Chart(serial_timeline_df).mark_bar().encode(
+            # Overall timeline: one bar per serial with the Serial label.
+            overall_chart = alt.Chart(serial_timeline_df).mark_bar().encode(
                 x=alt.X("Start:T", title="Time"),
                 x2="End:T",
                 y=alt.Y("Serial:N", title="Serial"),
                 tooltip=["Serial", "Start", "End"]
             ).properties(width=700, height=300)
             
-            # Overlay the Serial text at the start of each bar, aligned left and in black.
-            text = alt.Chart(serial_timeline_df).mark_text(
+            # Overlay the Serial text at the start of each bar (left aligned, black).
+            overall_text = alt.Chart(serial_timeline_df).mark_text(
                 align="left",
                 baseline="middle",
                 color="black",
-                dx=3  # slight offset from the start of the bar
+                dx=3  # slight offset
             ).encode(
                 x=alt.X("Start:T"),
                 y=alt.Y("Serial:N"),
                 text=alt.Text("Serial:N")
             )
             
-            st.altair_chart(chart + text, use_container_width=True)
+            st.altair_chart(overall_chart + overall_text, use_container_width=True)
 
         else:
             st.subheader(f"Detailed Timeline for Serial: **{selected_serial}**")
-            # Get all injects (rows) for the selected serial.
+            # Detailed timeline for the selected serial.
             group = df[df["Serial"] == selected_serial].reset_index(drop=True)
-
-            # Find the overall end for this serial using the serial_timeline info.
+            # Determine overall end for this serial.
             overall_end = serial_timeline_df[serial_timeline_df["Serial"] == selected_serial]["End"].iloc[0]
 
             # Build inject-level timeline data.
@@ -114,46 +121,84 @@ if uploaded_file is not None:
                     end_time = group["Time"].iloc[i + 1]
                 else:
                     end_time = overall_end
-                # Compute the display text: if Subject is missing, empty, or "null", use first 12 chars from Message.
+
+                # Determine display text.
                 subject_val = group["Subject"].iloc[i]
-                if pd.isna(subject_val) or str(subject_val).strip() == "" or str(subject_val).strip().lower() == "null":
-                    message_val = group["Message"].iloc[i]
-                    if isinstance(message_val, str) and len(message_val) > 12:
-                        display_text = message_val[:12] + "..."
+                message_val = group["Message"].iloc[i] if pd.notnull(group["Message"].iloc[i]) else ""
+                if (pd.isna(subject_val) or str(subject_val).strip() == "" or 
+                    str(subject_val).strip().lower() == "null"):
+                    # Use first 30 characters of Message.
+                    if isinstance(message_val, str) and len(message_val) > 30:
+                        display_text = message_val[:30] + "..."
                     else:
                         display_text = message_val
                 else:
                     display_text = subject_val
 
+                # Build message snippet for tooltip (first 120 characters).
+                if isinstance(message_val, str) and len(message_val) > 120:
+                    message_snippet = message_val[:120] + "..."
+                else:
+                    message_snippet = message_val
+
+                # Also capture ImageURL (may be empty).
+                image_url = group["ImageURL"].iloc[i] if pd.notnull(group["ImageURL"].iloc[i]) else ""
+
                 inject_timeline.append({
                     "Inject": f"Inject {i+1}",
                     "Start": start_time,
                     "End": end_time,
-                    "DisplayText": display_text
+                    "DisplayText": display_text,
+                    "MessageSnippet": message_snippet,
+                    "ImageURL": image_url
                 })
+
             inject_timeline_df = pd.DataFrame(inject_timeline)
 
-            # Build the bar chart for the detailed view.
+            ##############################
+            # Build Detailed Timeline Chart with Hover
+            ##############################
+            # Define a hover selection on the "Inject" field.
+            hover = alt.selection_single(fields=["Inject"], on="mouseover", nearest=True, empty="none")
+
+            # Base bar chart.
             bar_chart = alt.Chart(inject_timeline_df).mark_bar(color="orange").encode(
                 x=alt.X("Start:T", title="Time"),
                 x2="End:T",
                 y=alt.Y("Inject:N", title="Inject"),
-                tooltip=["Inject", "Start", "End", "DisplayText"]
-            ).properties(width=700, height=100 + 30 * len(inject_timeline_df))
+                tooltip=[
+                    alt.Tooltip("Inject:N", title="Inject"),
+                    alt.Tooltip("Start:T", title="Start"),
+                    alt.Tooltip("End:T", title="End"),
+                    alt.Tooltip("MessageSnippet:N", title="Message")
+                ]
+            ).properties(width=700, height=100 + 30 * len(inject_timeline_df)).add_selection(hover)
 
-            # Overlay the display text at the start of each bar, aligned left in black.
+            # Overlay the display text at the start of each bar (left aligned, black).
             text_chart = alt.Chart(inject_timeline_df).mark_text(
                 align="left",
                 baseline="middle",
                 color="black",
-                dx=3  # slight offset from the start of the bar
+                dx=3
             ).encode(
                 x=alt.X("Start:T"),
                 y=alt.Y("Inject:N"),
                 text=alt.Text("DisplayText:N")
             )
 
-            st.altair_chart(bar_chart + text_chart, use_container_width=True)
+            # Create an image layer that appears on hover if ImageURL is not empty.
+            image_layer = alt.Chart(inject_timeline_df).mark_image(width=50, height=50).encode(
+                # Position the image to the right of the bar (using the End time).
+                x=alt.X("End:T", title="Time"),
+                y=alt.Y("Inject:N", title="Inject"),
+                url=alt.Url("ImageURL:N"),
+                opacity=alt.condition(hover, alt.value(1), alt.value(0))
+            ).transform_filter("datum.ImageURL != ''")
+
+            # Layer the bar chart, text, and image.
+            detailed_chart = bar_chart + text_chart + image_layer
+
+            st.altair_chart(detailed_chart, use_container_width=True)
 
     except Exception as e:
         st.error(f"An error occurred: {e}")

@@ -17,9 +17,10 @@ Upload a CSV file with these columns:
 
 - **Detailed (Inject-level) Timeline:**  
   When you select a serial, its timeline “unfurls” to show each individual inject (row) as a separate bar.  
-  For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the last inject).
+  For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the final inject).  
+  The **Subject** text is overlaid at the center of each bar.
 
-Use the dropdown below to switch between the overall view and detailed view.
+Use the dropdown below to switch between the overall view and a detailed view.
 """
 )
 
@@ -32,7 +33,7 @@ if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
 
         # Verify required columns exist.
-        required_columns = ["Serial", "Time"]
+        required_columns = ["Serial", "Time", "Subject"]
         for col in required_columns:
             if col not in df.columns:
                 st.error(f"Missing required column: {col}")
@@ -59,10 +60,13 @@ if uploaded_file is not None:
             else:
                 # For the final serial, use the last time of the group.
                 end_time = group["Time"].iloc[-1]
+            # Use the Subject from the first row as a label for overall timeline (optional)
+            subject = group["Subject"].iloc[0]
             serial_timeline.append({
                 "Serial": serial,
                 "Start": start_time,
-                "End": end_time
+                "End": end_time,
+                "Subject": subject
             })
         serial_timeline_df = pd.DataFrame(serial_timeline)
 
@@ -75,25 +79,37 @@ if uploaded_file is not None:
 
         if selected_serial == "Overall Timeline":
             st.subheader("Overall Timeline (Serial-level)")
+            # In the overall view, we display one bar per serial.
             chart = alt.Chart(serial_timeline_df).mark_bar().encode(
                 x=alt.X("Start:T", title="Time"),
                 x2="End:T",
-                y=alt.Y("Serial:N", title="Serial")
+                y=alt.Y("Serial:N", title="Serial"),
+                tooltip=["Serial", "Start", "End", "Subject"]
             ).properties(width=700, height=300)
-            st.altair_chart(chart, use_container_width=True)
+            
+            # Optionally, overlay the first Subject text on each bar.
+            text = alt.Chart(serial_timeline_df).mark_text(
+                align="center",
+                baseline="middle",
+                color="white"
+            ).encode(
+                x=alt.X("midpoint:T", title=""),
+                y=alt.Y("Serial:N", title=""),
+                text=alt.Text("Subject:N")
+            ).transform_calculate(
+                # Calculate midpoint between Start and End (milliseconds since epoch)
+                midpoint="toDate((datetime(datum.Start).getTime() + datetime(datum.End).getTime())/2)"
+            )
+            
+            st.altair_chart(chart + text, use_container_width=True)
+
         else:
             st.subheader(f"Detailed Timeline for Serial: **{selected_serial}**")
             # Get all injects (rows) for the selected serial.
             group = df[df["Serial"] == selected_serial].reset_index(drop=True)
 
             # Find the overall end for this serial using the serial_timeline info.
-            overall_end = None
-            for rec in serial_timeline:
-                if rec["Serial"] == selected_serial:
-                    overall_end = rec["End"]
-                    break
-            if overall_end is None:
-                overall_end = group["Time"].iloc[-1]
+            overall_end = serial_timeline_df[serial_timeline_df["Serial"] == selected_serial]["End"].iloc[0]
 
             # Build inject-level timeline data.
             inject_timeline = []
@@ -106,16 +122,36 @@ if uploaded_file is not None:
                 inject_timeline.append({
                     "Inject": f"Inject {i+1}",
                     "Start": start_time,
-                    "End": end_time
+                    "End": end_time,
+                    "Subject": group["Subject"].iloc[i]
                 })
             inject_timeline_df = pd.DataFrame(inject_timeline)
+            # Compute the midpoint of each bar for placing the text.
+            inject_timeline_df["midpoint"] = inject_timeline_df.apply(
+                lambda row: row["Start"] + (row["End"] - row["Start"]) / 2, axis=1
+            )
 
-            chart = alt.Chart(inject_timeline_df).mark_bar(color="orange").encode(
+            # Build the bar chart for the detailed view.
+            bar_chart = alt.Chart(inject_timeline_df).mark_bar(color="orange").encode(
                 x=alt.X("Start:T", title="Time"),
                 x2="End:T",
-                y=alt.Y("Inject:N", title="Inject")
-            ).properties(width=700, height=100 + 30 * len(inject_timeline))
-            st.altair_chart(chart, use_container_width=True)
+                y=alt.Y("Inject:N", title="Inject"),
+                tooltip=["Inject", "Start", "End", "Subject"]
+            ).properties(width=700, height=100 + 30 * len(inject_timeline_df))
+
+            # Overlay the subject text on each bar.
+            text_chart = alt.Chart(inject_timeline_df).mark_text(
+                align="center",
+                baseline="middle",
+                color="white",
+                dx=0  # no horizontal offset
+            ).encode(
+                x=alt.X("midpoint:T"),
+                y=alt.Y("Inject:N"),
+                text=alt.Text("Subject:N")
+            )
+
+            st.altair_chart(bar_chart + text_chart, use_container_width=True)
 
     except Exception as e:
         st.error(f"An error occurred: {e}")

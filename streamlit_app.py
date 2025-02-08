@@ -18,7 +18,7 @@ Upload a CSV file with these columns:
 - **Detailed (Inject-level) Timeline:**  
   When you select a serial, its timeline “unfurls” to show each individual inject (row) as a separate bar.  
   For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the final inject).  
-  The **Subject** text is overlaid at the start of each bar.
+  The overlaid text on each bar shows the **Subject**; however, if the **Subject** is missing, empty, or `"null"`, the first 12 characters of **Message** (followed by `"..."` if longer than 12 characters) are used instead.
 
 Use the dropdown below to switch between the overall view and a detailed view.
 """
@@ -33,7 +33,7 @@ if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
 
         # Verify required columns exist.
-        required_columns = ["Serial", "Time", "Subject"]
+        required_columns = ["Serial", "Time", "Subject", "Message"]
         for col in required_columns:
             if col not in df.columns:
                 st.error(f"Missing required column: {col}")
@@ -84,12 +84,12 @@ if uploaded_file is not None:
                 tooltip=["Serial", "Start", "End"]
             ).properties(width=700, height=300)
             
-            # Overlay the Serial text at the start of each bar with a slight offset, in black.
+            # Overlay the Serial text at the start of each bar, aligned left and in black.
             text = alt.Chart(serial_timeline_df).mark_text(
                 align="left",
                 baseline="middle",
                 color="black",
-                dx=3  # slight right offset from the start of the bar
+                dx=3  # slight offset from the start of the bar
             ).encode(
                 x=alt.X("Start:T"),
                 y=alt.Y("Serial:N"),
@@ -114,11 +114,22 @@ if uploaded_file is not None:
                     end_time = group["Time"].iloc[i + 1]
                 else:
                     end_time = overall_end
+                # Compute the display text: if Subject is missing, empty, or "null", use first 12 chars from Message.
+                subject_val = group["Subject"].iloc[i]
+                if pd.isna(subject_val) or str(subject_val).strip() == "" or str(subject_val).strip().lower() == "null":
+                    message_val = group["Message"].iloc[i]
+                    if isinstance(message_val, str) and len(message_val) > 12:
+                        display_text = message_val[:12] + "..."
+                    else:
+                        display_text = message_val
+                else:
+                    display_text = subject_val
+
                 inject_timeline.append({
                     "Inject": f"Inject {i+1}",
                     "Start": start_time,
                     "End": end_time,
-                    "Subject": group["Subject"].iloc[i]
+                    "DisplayText": display_text
                 })
             inject_timeline_df = pd.DataFrame(inject_timeline)
 
@@ -127,19 +138,19 @@ if uploaded_file is not None:
                 x=alt.X("Start:T", title="Time"),
                 x2="End:T",
                 y=alt.Y("Inject:N", title="Inject"),
-                tooltip=["Inject", "Start", "End", "Subject"]
+                tooltip=["Inject", "Start", "End", "DisplayText"]
             ).properties(width=700, height=100 + 30 * len(inject_timeline_df))
 
-            # Overlay the Subject text at the start of each bar, aligned left and in black.
+            # Overlay the display text at the start of each bar, aligned left in black.
             text_chart = alt.Chart(inject_timeline_df).mark_text(
                 align="left",
                 baseline="middle",
                 color="black",
-                dx=3  # slight offset
+                dx=3  # slight offset from the start of the bar
             ).encode(
                 x=alt.X("Start:T"),
                 y=alt.Y("Inject:N"),
-                text=alt.Text("Subject:N")
+                text=alt.Text("DisplayText:N")
             )
 
             st.altair_chart(bar_chart + text_chart, use_container_width=True)

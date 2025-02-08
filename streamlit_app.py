@@ -1,14 +1,22 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from streamlit_plotly_events import plotly_events
 
-st.title("Gantt Chart Timeline from CSV")
+st.title("Interactive Gantt Chart Timeline from CSV")
 
 st.markdown("""
 Upload a CSV file with the following columns:  
 `Serial, Number, Time, From, Faction, To, Team, Method, On, Subject, Message, Reply, timestamp, Expected Action, Expected Action Title, Expected Action ImageURL, ImageURL`.
 
-The app will use the **Serial** column as the label. For each serial group (one or more rows with the same Serial), the first **Time** value is used as the start of that serial, and the first **Time** of the next serial is used as its end. For the final serial, the last available **Time** is used as the end.
+- **Timeline Creation:**  
+  For each serial (group of one or more rows sharing the same **Serial** value):
+  - The first **Time** is used as the start time.
+  - The first **Time** of the next serial is used as the end time.
+  - For the final serial, the last available **Time** is used as the end.
+  
+- **Interactivity:**  
+  Click on a Gantt bar (representing a serial) to reveal the detailed injects (the CSV rows with that Serial).
 """)
 
 # File uploader widget
@@ -19,40 +27,37 @@ if uploaded_file is not None:
         # Read CSV data
         df = pd.read_csv(uploaded_file)
         
-        # Ensure the required columns exist
+        # Check for required columns
         required_columns = ["Serial", "Time"]
         for col in required_columns:
             if col not in df.columns:
                 st.error(f"Missing required column: {col}")
                 st.stop()
         
-        # Convert the 'Time' column to datetime
+        # Convert the 'Time' column to datetime and sort the data
         df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
         if df["Time"].isnull().all():
-            st.error("No valid dates found in 'Time' column.")
+            st.error("No valid dates found in the 'Time' column.")
             st.stop()
-        
-        # Sort the dataframe by time (if not already sorted)
         df = df.sort_values("Time").reset_index(drop=True)
         
-        st.subheader("Uploaded Data")
+        st.subheader("Uploaded Data (First 5 Rows)")
         st.dataframe(df.head())
-
-        # Get the unique serials in the order they appear
+        
+        # Build timeline data for each serial
         serials = df["Serial"].unique()
         timeline_data = []
-
-        # Loop through each serial group to compute start and end times
+        
         for i, serial in enumerate(serials):
             group_df = df[df["Serial"] == serial]
             start_time = group_df["Time"].iloc[0]
             if i < len(serials) - 1:
-                # For non-last serials, use the first time of the next serial as the end time.
+                # Use the first time of the next serial as the end time
                 next_serial = serials[i + 1]
                 next_group_df = df[df["Serial"] == next_serial]
                 end_time = next_group_df["Time"].iloc[0]
             else:
-                # For the final serial, use the last time in the group.
+                # For the final serial, use the last time of the group as the end
                 end_time = group_df["Time"].iloc[-1]
             
             timeline_data.append({
@@ -60,13 +65,13 @@ if uploaded_file is not None:
                 "Start": start_time,
                 "End": end_time
             })
-
+        
         timeline_df = pd.DataFrame(timeline_data)
         
         st.subheader("Timeline Data")
         st.dataframe(timeline_df)
-
-        # Create the Gantt chart using Plotly Express timeline
+        
+        # Create the Gantt chart timeline using Plotly Express
         fig = px.timeline(
             timeline_df,
             x_start="Start",
@@ -74,11 +79,23 @@ if uploaded_file is not None:
             y="Serial",
             title="Gantt Chart Timeline"
         )
-        # Optionally, reverse the y-axis so the first serial appears at the top
+        # Reverse the y-axis so the earliest serial is at the top
         fig.update_yaxes(autorange="reversed")
         
-        st.plotly_chart(fig, use_container_width=True)
-
+        st.subheader("Interactive Gantt Chart")
+        st.markdown("Click on a bar to view the injects (detailed rows) for that serial.")
+        
+        # Capture click events on the Plotly chart
+        clicked_points = plotly_events(fig, click_event=True)
+        
+        if clicked_points:
+            clicked_serial = clicked_points[0]['y']
+            st.markdown(f"### Details for Serial: **{clicked_serial}**")
+            injects = df[df["Serial"] == clicked_serial]
+            st.dataframe(injects)
+        else:
+            st.info("Click on a bar to see detailed injects.")
+            
     except Exception as e:
         st.error(f"An error occurred: {e}")
 else:

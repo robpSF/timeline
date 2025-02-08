@@ -60,15 +60,17 @@ if uploaded_file is not None:
             else:
                 # For the final serial, use the last time of the group.
                 end_time = group["Time"].iloc[-1]
-            # Use the Subject from the first row as a label (optional)
-            subject = group["Subject"].iloc[0]
             serial_timeline.append({
                 "Serial": serial,
                 "Start": start_time,
-                "End": end_time,
-                "Subject": subject
+                "End": end_time
             })
         serial_timeline_df = pd.DataFrame(serial_timeline)
+
+        # Precompute midpoint for each overall timeline bar.
+        serial_timeline_df["midpoint"] = serial_timeline_df.apply(
+            lambda row: row["Start"] + (row["End"] - row["Start"]) / 2, axis=1
+        )
 
         # Let the user choose between the overall timeline and a detailed view.
         options = ["Overall Timeline"] + list(serials)
@@ -87,18 +89,15 @@ if uploaded_file is not None:
                 tooltip=["Serial", "Start", "End"]
             ).properties(width=700, height=300)
             
-            # Overlay the Serial text on each bar.
+            # Overlay the Serial text on each bar using the precomputed midpoint.
             text = alt.Chart(serial_timeline_df).mark_text(
                 align="center",
                 baseline="middle",
                 color="white"
             ).encode(
-                # Compute midpoint for each bar.
                 x=alt.X("midpoint:T"),
                 y=alt.Y("Serial:N"),
                 text=alt.Text("Serial:N")
-            ).transform_calculate(
-                midpoint="toDate((datetime(datum.Start).getTime() + datetime(datum.End).getTime())/2)"
             )
             
             st.altair_chart(chart + text, use_container_width=True)

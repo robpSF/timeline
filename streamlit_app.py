@@ -4,33 +4,6 @@ import altair as alt
 
 st.title("Interactive Gantt Chart Timeline from CSV (Altair)")
 
-st.markdown(
-    """
-Upload a CSV file with these columns:  
-`Serial, Number, Time, From, Faction, To, Team, Method, On, Subject, Message, Reply, timestamp, Expected Action, Expected Action Title, Expected Action ImageURL, ImageURL`.
-
-**Timeline Construction:**
-
-- **Overall Timeline (Serial-level):**  
-  Each unique **Serial** is represented by one bar.  
-  • The start time is the first inject’s **Time** for that serial.  
-  • The end time is the first **Time** of the next serial (or the last time for the final serial).  
-  • The bar is labeled (on the bar, aligned left in black) with the **Serial**.  
-  • The serial bars are sorted in chronological order (by start time).
-
-- **Detailed Timeline (Inject-level):**  
-  When you select a serial, its timeline “unfurls” to show each individual inject (row) as a separate bar.  
-  • For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the final inject).  
-  • The overlaid text on each bar (aligned left in black with a slight offset) is determined as follows:  
-  – If **Subject** is nonempty and not `"null"`, then use **Subject**.  
-  – Otherwise, use the first **30** characters of **Message** (with `"..."` appended if **Message** is longer than 30 characters).  
-  • The tooltip displays the first **120** characters of **Message**.  
-  • If **ImageURL** is provided (nonempty), an image (50×50 pixels) appears on hover to the right of the bar.  
-  • A toggle switch lets you choose whether to label the y‑axis by the **From** field (“Persona”) or the **Method** field (“Channel”). A sequential number is appended so that each y‑axis label is unique.
-
-Use the dropdown below to switch between the overall view and a detailed view.
-"""
-)
 
 # File uploader widget.
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"])

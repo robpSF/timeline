@@ -18,7 +18,7 @@ Upload a CSV file with these columns:
 - **Detailed (Inject-level) Timeline:**  
   When you select a serial, its timeline “unfurls” to show each individual inject (row) as a separate bar.  
   For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the final inject).  
-  The **Subject** text is overlaid at the center of each bar.
+  The **Subject** text is overlaid at the start of each bar.
 
 Use the dropdown below to switch between the overall view and a detailed view.
 """
@@ -76,7 +76,7 @@ if uploaded_file is not None:
 
         if selected_serial == "Overall Timeline":
             st.subheader("Overall Timeline (Serial-level)")
-            # In the overall view, we display one bar per serial.
+            # In the overall view, display one bar per serial.
             chart = alt.Chart(serial_timeline_df).mark_bar().encode(
                 x=alt.X("Start:T", title="Time"),
                 x2="End:T",
@@ -89,7 +89,7 @@ if uploaded_file is not None:
                 align="left",
                 baseline="middle",
                 color="black",
-                dx=3  # slight right offset
+                dx=3  # slight right offset from the start of the bar
             ).encode(
                 x=alt.X("Start:T"),
                 y=alt.Y("Serial:N"),
@@ -121,10 +121,6 @@ if uploaded_file is not None:
                     "Subject": group["Subject"].iloc[i]
                 })
             inject_timeline_df = pd.DataFrame(inject_timeline)
-            # Compute the midpoint of each bar for placing the text.
-            inject_timeline_df["midpoint"] = inject_timeline_df.apply(
-                lambda row: row["Start"] + (row["End"] - row["Start"]) / 2, axis=1
-            )
 
             # Build the bar chart for the detailed view.
             bar_chart = alt.Chart(inject_timeline_df).mark_bar(color="orange").encode(
@@ -134,14 +130,14 @@ if uploaded_file is not None:
                 tooltip=["Inject", "Start", "End", "Subject"]
             ).properties(width=700, height=100 + 30 * len(inject_timeline_df))
 
-            # Overlay the subject text on each bar.
+            # Overlay the Subject text at the start of each bar, aligned left and in black.
             text_chart = alt.Chart(inject_timeline_df).mark_text(
-                align="center",
+                align="left",
                 baseline="middle",
-                color="white",
-                dx=0  # no horizontal offset
+                color="black",
+                dx=3  # slight offset
             ).encode(
-                x=alt.X("midpoint:T"),
+                x=alt.X("Start:T"),
                 y=alt.Y("Inject:N"),
                 text=alt.Text("Subject:N")
             )

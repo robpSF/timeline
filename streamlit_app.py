@@ -1,30 +1,29 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-from streamlit_plotly_events import plotly_events
+import altair as alt
 
-st.title("Interactive Gantt Chart Timeline from CSV")
+st.title("Interactive Gantt Chart Timeline from CSV (Altair)")
+
 st.markdown(
     """
 Upload a CSV file with these columns:  
 `Serial, Number, Time, From, Faction, To, Team, Method, On, Subject, Message, Reply, timestamp, Expected Action, Expected Action Title, Expected Action ImageURL, ImageURL`.
 
-**How it works:**
+**Timeline Construction:**
+- **Overall Timeline:**  
+  Each unique **Serial** is represented by one bar.  
+  The start time is the first inject’s **Time** for that serial.  
+  The end time is the first **Time** of the next serial (or the last time for the final serial).
 
-- **Main Timeline:** Each unique **Serial** is represented by one bar.  
-  • The start time is the first inject’s **Time**.  
-  • The end time is the first **Time** of the next serial (or the last time for the final serial).
+- **Detailed (Inject-level) Timeline:**  
+  When you select a serial, its timeline “unfurls” to show each individual inject (row) as a separate bar.  
+  For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the last inject).
 
-- **Interactive Expansion:**  
-  Click on a serial’s bar to toggle expansion. An expanded bar “unfurls” into separate sub‑bars representing each inject (row) in that serial. Click again to collapse.
+Use the dropdown below to switch between the overall view and detailed view.
 """
 )
 
-# Initialize session state for expanded serial.
-if "expanded_serial" not in st.session_state:
-    st.session_state.expanded_serial = None
-
-# File uploader
+# File uploader widget
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file is not None:
@@ -32,104 +31,91 @@ if uploaded_file is not None:
         # Read CSV data
         df = pd.read_csv(uploaded_file)
 
-        # Check for required columns.
+        # Verify required columns exist.
         required_columns = ["Serial", "Time"]
         for col in required_columns:
             if col not in df.columns:
                 st.error(f"Missing required column: {col}")
                 st.stop()
 
-        # Convert 'Time' column to datetime and sort the data.
+        # Convert the 'Time' column to datetime and sort the data.
         df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
         if df["Time"].isnull().all():
-            st.error("No valid dates were found in the 'Time' column.")
+            st.error("No valid dates found in the 'Time' column.")
             st.stop()
         df = df.sort_values("Time").reset_index(drop=True)
 
-        # Compute overall timeline start/end for each serial.
-        serials = list(df["Serial"].unique())
-        serial_timeline = {}  # serial -> dict with keys "start" and "end"
+        # Build overall (serial-level) timeline data.
+        serials = df["Serial"].unique()
+        serial_timeline = []
         for i, serial in enumerate(serials):
             group = df[df["Serial"] == serial]
-            start = group["Time"].iloc[0]
+            start_time = group["Time"].iloc[0]
             if i < len(serials) - 1:
                 # End time is the first Time of the next serial.
                 next_serial = serials[i + 1]
                 next_group = df[df["Serial"] == next_serial]
-                end = next_group["Time"].iloc[0]
+                end_time = next_group["Time"].iloc[0]
             else:
-                end = group["Time"].iloc[-1]
-            serial_timeline[serial] = {"start": start, "end": end}
+                # For the final serial, use the last time of the group.
+                end_time = group["Time"].iloc[-1]
+            serial_timeline.append({
+                "Serial": serial,
+                "Start": start_time,
+                "End": end_time
+            })
+        serial_timeline_df = pd.DataFrame(serial_timeline)
 
-        # Build chart data.
-        # For each serial, if it is expanded then break it into its individual injects,
-        # otherwise, add one bar for the entire serial.
-        chart_data = []
-        expanded_serial = st.session_state.expanded_serial
-        for serial in serials:
-            if expanded_serial == serial:
-                group = df[df["Serial"] == serial].reset_index(drop=True)
-                overall_end = serial_timeline[serial]["end"]
-                # For each inject in the serial.
-                for i in range(len(group)):
-                    inject_start = group["Time"].iloc[i]
-                    if i < len(group) - 1:
-                        inject_end = group["Time"].iloc[i + 1]
-                    else:
-                        inject_end = overall_end
-                    label = f"{serial} (Inject {i + 1})"
-                    chart_data.append({
-                        "Label": label,
-                        "Start": inject_start,
-                        "End": inject_end,
-                        "Serial": serial,
-                        "Type": "inject"
-                    })
-            else:
-                overall_start = serial_timeline[serial]["start"]
-                overall_end = serial_timeline[serial]["end"]
-                chart_data.append({
-                    "Label": serial,
-                    "Start": overall_start,
-                    "End": overall_end,
-                    "Serial": serial,
-                    "Type": "serial"
-                })
-
-        chart_df = pd.DataFrame(chart_data)
-
-        # Create the timeline chart using Plotly Express.
-        # We pass custom_data so that when a bar is clicked, we know which serial it represents.
-        fig = px.timeline(
-            chart_df,
-            x_start="Start",
-            x_end="End",
-            y="Label",
-            color="Type",
-            title="Gantt Chart Timeline (Click on a bar to expand/collapse)",
-            custom_data=["Serial", "Type"]
+        # Let the user choose between the overall timeline and a detailed view.
+        options = ["Overall Timeline"] + list(serials)
+        selected_serial = st.selectbox(
+            "Select a Serial to view its detailed (inject-level) timeline:",
+            options=options
         )
-        # Reverse the y-axis so the earliest entry is at the top.
-        fig.update_yaxes(autorange="reversed")
-        fig.update_layout(clickmode="event+select")
 
-        st.subheader("Interactive Timeline Chart")
-        st.markdown("Click on a serial bar to expand (or collapse) its injects.")
+        if selected_serial == "Overall Timeline":
+            st.subheader("Overall Timeline (Serial-level)")
+            chart = alt.Chart(serial_timeline_df).mark_bar().encode(
+                x=alt.X("Start:T", title="Time"),
+                x2="End:T",
+                y=alt.Y("Serial:N", title="Serial")
+            ).properties(width=700, height=300)
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.subheader(f"Detailed Timeline for Serial: **{selected_serial}**")
+            # Get all injects (rows) for the selected serial.
+            group = df[df["Serial"] == selected_serial].reset_index(drop=True)
 
-        # Capture click events on the chart.
-        click_data = plotly_events(fig, click_event=True, override_height=600)
-        if click_data:
-            clicked_serial = click_data[0]["customdata"][0]
-            # Toggle expansion: collapse if already expanded; otherwise, expand.
-            if st.session_state.expanded_serial == clicked_serial:
-                st.session_state.expanded_serial = None
-            else:
-                st.session_state.expanded_serial = clicked_serial
-            # Rerun to update the chart.
-            st.experimental_rerun()
+            # Find the overall end for this serial using the serial_timeline info.
+            overall_end = None
+            for rec in serial_timeline:
+                if rec["Serial"] == selected_serial:
+                    overall_end = rec["End"]
+                    break
+            if overall_end is None:
+                overall_end = group["Time"].iloc[-1]
 
-        # Display the timeline chart.
-        st.plotly_chart(fig, use_container_width=True)
+            # Build inject-level timeline data.
+            inject_timeline = []
+            for i in range(len(group)):
+                start_time = group["Time"].iloc[i]
+                if i < len(group) - 1:
+                    end_time = group["Time"].iloc[i + 1]
+                else:
+                    end_time = overall_end
+                inject_timeline.append({
+                    "Inject": f"Inject {i+1}",
+                    "Start": start_time,
+                    "End": end_time
+                })
+            inject_timeline_df = pd.DataFrame(inject_timeline)
+
+            chart = alt.Chart(inject_timeline_df).mark_bar(color="orange").encode(
+                x=alt.X("Start:T", title="Time"),
+                x2="End:T",
+                y=alt.Y("Inject:N", title="Inject")
+            ).properties(width=700, height=100 + 30 * len(inject_timeline))
+            st.altair_chart(chart, use_container_width=True)
 
     except Exception as e:
         st.error(f"An error occurred: {e}")

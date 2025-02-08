@@ -10,25 +10,28 @@ Upload a CSV file with these columns:
 `Serial, Number, Time, From, Faction, To, Team, Method, On, Subject, Message, Reply, timestamp, Expected Action, Expected Action Title, Expected Action ImageURL, ImageURL`.
 
 **Timeline Construction:**
-- **Overall Timeline:**  
-  Each unique **Serial** is represented by one bar.  
-  The start time is the first inject’s **Time** for that serial.  
-  The end time is the first **Time** of the next serial (or the last time for the final serial).  
-  The bar is labeled (on the bar, aligned left in black) with the **Serial**.
 
-- **Detailed (Inject-level) Timeline:**  
+- **Overall Timeline (Serial-level):**  
+  Each unique **Serial** is represented by one bar.  
+  • The start time is the first inject’s **Time** for that serial.  
+  • The end time is the first **Time** of the next serial (or the last time for the final serial).  
+  • The bar is labeled (on the bar, aligned left in black) with the **Serial**.
+
+- **Detailed Timeline (Inject-level):**  
   When you select a serial, its timeline “unfurls” to show each individual inject (row) as a separate bar.  
-  For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the final inject).  
-  The overlaid text on each bar (aligned left in black with a slight offset) is determined as follows:  
-  • If **Subject** is nonempty and not `"null"`, then use Subject.  
-  • Otherwise, use the first **30** characters of **Message** (appending `"..."` if Message is longer than 30 characters).  
-  In the tooltip (on hover) the first **120** characters of **Message** are shown, and if **ImageURL** is not empty an image (50×50 pixels) is displayed to the right of the bar.
+  • For each inject, the start time is its **Time** value and the end time is the next inject’s **Time** (or the overall serial end for the final inject).  
+  • The overlaid text on each bar (aligned left in black with a slight offset) is determined as follows:  
+  – If **Subject** is nonempty and not `"null"`, then use **Subject**.  
+  – Otherwise, use the first **30** characters of **Message** (with `"..."` appended if **Message** is longer than 30 characters).  
+  • The tooltip displays the first **120** characters of **Message**.  
+  • If **ImageURL** is provided (nonempty), an image (50×50 pixels) appears on hover to the right of the bar.  
+  • **New:** Instead of showing generic “Inject 1”, “Inject 2”, etc. on the y‑axis, a toggle switch lets you choose whether to show either the **From** field (“Persona”) or the **Method** field (“Channel”).
 
 Use the dropdown below to switch between the overall view and a detailed view.
 """
 )
 
-# File uploader widget
+# File uploader widget.
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file is not None:
@@ -37,7 +40,7 @@ if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
 
         # Verify required columns exist.
-        required_columns = ["Serial", "Time", "Subject", "Message", "ImageURL"]
+        required_columns = ["Serial", "Time", "Subject", "Message", "ImageURL", "From", "Method"]
         for col in required_columns:
             if col not in df.columns:
                 st.error(f"Missing required column: {col}")
@@ -74,7 +77,7 @@ if uploaded_file is not None:
         serial_timeline_df = pd.DataFrame(serial_timeline)
 
         ##############################
-        # Select overall or detailed view.
+        # Select Overall or Detailed View
         ##############################
         options = ["Overall Timeline"] + list(serials)
         selected_serial = st.selectbox(
@@ -97,7 +100,7 @@ if uploaded_file is not None:
                 align="left",
                 baseline="middle",
                 color="black",
-                dx=3  # slight offset
+                dx=3  # slight offset from the start of the bar
             ).encode(
                 x=alt.X("Start:T"),
                 y=alt.Y("Serial:N"),
@@ -108,12 +111,18 @@ if uploaded_file is not None:
 
         else:
             st.subheader(f"Detailed Timeline for Serial: **{selected_serial}**")
-            # Detailed timeline for the selected serial.
+            # Let the user choose whether to label the detailed timeline by Persona or Channel.
+            label_option = st.radio("Select detailed timeline label", ["Persona", "Channel"])
+            # 'Persona' will display the 'From' column; 'Channel' will display the 'Method' column.
+
+            # Get all injects (rows) for the selected serial.
             group = df[df["Serial"] == selected_serial].reset_index(drop=True)
-            # Determine overall end for this serial.
+            # Determine overall end for this serial using the overall timeline info.
             overall_end = serial_timeline_df[serial_timeline_df["Serial"] == selected_serial]["End"].iloc[0]
 
+            ##############################
             # Build inject-level timeline data.
+            ##############################
             inject_timeline = []
             for i in range(len(group)):
                 start_time = group["Time"].iloc[i]
@@ -135,17 +144,23 @@ if uploaded_file is not None:
                 else:
                     display_text = subject_val
 
-                # Build message snippet for tooltip (first 120 characters).
+                # Build message snippet for tooltip (first 120 characters of Message).
                 if isinstance(message_val, str) and len(message_val) > 120:
                     message_snippet = message_val[:120] + "..."
                 else:
                     message_snippet = message_val
 
-                # Also capture ImageURL (may be empty).
+                # Also capture ImageURL.
                 image_url = group["ImageURL"].iloc[i] if pd.notnull(group["ImageURL"].iloc[i]) else ""
 
+                # Determine the axis label based on the toggle switch.
+                if label_option == "Persona":
+                    axis_label = group["From"].iloc[i]
+                else:
+                    axis_label = group["Method"].iloc[i]
+
                 inject_timeline.append({
-                    "Inject": f"Inject {i+1}",
+                    "AxisLabel": axis_label,
                     "Start": start_time,
                     "End": end_time,
                     "DisplayText": display_text,
@@ -158,16 +173,16 @@ if uploaded_file is not None:
             ##############################
             # Build Detailed Timeline Chart with Hover
             ##############################
-            # Define a hover selection on the "Inject" field.
-            hover = alt.selection_single(fields=["Inject"], on="mouseover", nearest=True, empty="none")
+            # Define a hover selection on the AxisLabel field.
+            hover = alt.selection_single(fields=["AxisLabel"], on="mouseover", nearest=True, empty="none")
 
             # Base bar chart.
             bar_chart = alt.Chart(inject_timeline_df).mark_bar(color="orange").encode(
                 x=alt.X("Start:T", title="Time"),
                 x2="End:T",
-                y=alt.Y("Inject:N", title="Inject"),
+                y=alt.Y("AxisLabel:N", title=label_option),
                 tooltip=[
-                    alt.Tooltip("Inject:N", title="Inject"),
+                    alt.Tooltip("AxisLabel:N", title=label_option),
                     alt.Tooltip("Start:T", title="Start"),
                     alt.Tooltip("End:T", title="End"),
                     alt.Tooltip("MessageSnippet:N", title="Message")
@@ -182,7 +197,7 @@ if uploaded_file is not None:
                 dx=3
             ).encode(
                 x=alt.X("Start:T"),
-                y=alt.Y("Inject:N"),
+                y=alt.Y("AxisLabel:N"),
                 text=alt.Text("DisplayText:N")
             )
 
@@ -190,7 +205,7 @@ if uploaded_file is not None:
             image_layer = alt.Chart(inject_timeline_df).mark_image(width=50, height=50).encode(
                 # Position the image to the right of the bar (using the End time).
                 x=alt.X("End:T", title="Time"),
-                y=alt.Y("Inject:N", title="Inject"),
+                y=alt.Y("AxisLabel:N", title=label_option),
                 url=alt.Url("ImageURL:N"),
                 opacity=alt.condition(hover, alt.value(1), alt.value(0))
             ).transform_filter("datum.ImageURL != ''")

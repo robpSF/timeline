@@ -60,7 +60,7 @@ if uploaded_file is not None:
             else:
                 # For the final serial, use the last time of the group.
                 end_time = group["Time"].iloc[-1]
-            # Use the Subject from the first row as a label for overall timeline (optional)
+            # Use the Subject from the first row as a label (optional)
             subject = group["Subject"].iloc[0]
             serial_timeline.append({
                 "Serial": serial,
@@ -84,20 +84,20 @@ if uploaded_file is not None:
                 x=alt.X("Start:T", title="Time"),
                 x2="End:T",
                 y=alt.Y("Serial:N", title="Serial"),
-                tooltip=["Serial", "Start", "End", "Subject"]
+                tooltip=["Serial", "Start", "End"]
             ).properties(width=700, height=300)
             
-            # Optionally, overlay the first Subject text on each bar.
+            # Overlay the Serial text on each bar.
             text = alt.Chart(serial_timeline_df).mark_text(
                 align="center",
                 baseline="middle",
                 color="white"
             ).encode(
-                x=alt.X("midpoint:T", title=""),
-                y=alt.Y("Serial:N", title=""),
-                text=alt.Text("Subject:N")
+                # Compute midpoint for each bar.
+                x=alt.X("midpoint:T"),
+                y=alt.Y("Serial:N"),
+                text=alt.Text("Serial:N")
             ).transform_calculate(
-                # Calculate midpoint between Start and End (milliseconds since epoch)
                 midpoint="toDate((datetime(datum.Start).getTime() + datetime(datum.End).getTime())/2)"
             )
             
